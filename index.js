@@ -4,7 +4,7 @@ const http = require('http');
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 
-// 1. Заглушка для Render, чтобы сервис не выключался по таймауту порта
+// Веб-сервер для поддержания активности на Render
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
@@ -13,14 +13,15 @@ http.createServer((req, res) => {
   console.log(`Веб-сервер запущен на порту ${PORT}`);
 });
 
-// 2. Инициализация Telegram-бота
 const bot = new Telegraf(BOT_TOKEN);
-const AI_MODEL = "google/gemini-2.0-flash-exp:free";
+
+// Используем самую стабильную бесплатную модель на OpenRouter
+const AI_MODEL = "google/gemini-flash-1.5";
 
 const helpMessage = 
   "✨ **Главное меню DarkAi** ✨\n\n" +
   "🤖 **Текст:** Просто отправьте мне любой вопрос или задачу.\n" +
-  "🎨 **Картинки:** Нажмите кнопку ниже или напишите `/img <описание>`\n" +
+  "🎨 **Картинки:** Напишите `/img <описание>` для создания арт-изображения.\n" +
   "ℹ️ **Информация:** Узнать возможности бота.";
 
 const mainMenu = Markup.keyboard([
@@ -42,9 +43,9 @@ bot.help(async (ctx) => {
 bot.hears('ℹ️ О боте', async (ctx) => {
   await ctx.reply(
     "🤖 **DarkAi Bot**\n\n" +
-    "• **Текстовый ИИ:** Gemini 2.0 Flash (быстрые и свежие ответы)\n" +
+    "• **Текстовый ИИ:** Google Gemini Flash 1.5\n" +
     "• **Генерация фото:** Pollinations AI\n" +
-    "• **Скорость:** Высокая ⚡️",
+    "• **Статус:** Работает стабильно ⚡️",
     { parse_mode: 'Markdown' }
   );
 });
@@ -54,22 +55,25 @@ bot.hears('📜 Справка', async (ctx) => {
 });
 
 bot.hears('🎨 Сгенерировать картинку', async (ctx) => {
-  await ctx.reply("Чтобы сгенерировать картинку, напишите команду в формате:\n\n`/img неоновый город будущего`", { parse_mode: 'Markdown' });
+  await ctx.reply("Чтобы сгенерировать картинку, отправьте команду в формате:\n\n`/img киберпанк кот в очках`", { parse_mode: 'Markdown' });
 });
 
-// Генерация изображений
+// Исправленная генерация картинок (добавлен уникальный seed и принудительное обновление)
 bot.command('img', async (ctx) => {
   const text = ctx.message.text;
   const prompt = text.replace('/img', '').trim();
   
   if (!prompt) {
-    return ctx.reply("⚠️ Пожалуйста, укажите описание! Пример:\n`/img киберпанк кот в очках`", { parse_mode: 'Markdown' });
+    return ctx.reply("⚠️ Пожалуйста, укажите описание! Пример:\n`/img космический корабль над планетой`", { parse_mode: 'Markdown' });
   }
 
   const statusMsg = await ctx.reply("🎨 **Генерирую изображение...**\n⏳ *Подождите несколько секунд...*", { parse_mode: 'Markdown' });
 
   try {
-    const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=1024&height=1024&nologo=true&seed=${Math.floor(Math.random() * 1000000)}`;
+    // Формируем чистый запрос без путаницы с кэшем
+    const encodedPrompt = encodeURIComponent(prompt);
+    const randomSeed = Math.floor(Math.random() * 10000000);
+    const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=1024&nologo=true&seed=${randomSeed}`;
     
     await ctx.deleteMessage(statusMsg.message_id).catch(() => {});
     await ctx.replyWithPhoto(imageUrl, { 
@@ -87,7 +91,7 @@ bot.command('img', async (ctx) => {
   }
 });
 
-// Текстовый диалог с ИИ (Gemini 2.0 Flash)
+// Надежный текстовый обработчик
 bot.on('text', async (ctx) => {
   const userText = ctx.message.text;
   
@@ -102,7 +106,7 @@ bot.on('text', async (ctx) => {
       headers: {
         "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
         "Content-Type": "application/json",
-        "HTTP-Referer": "https://telegram.org",
+        "HTTP-Referer": "https://t.me/DarkAiBot",
         "X-Title": "DarkAi Bot"
       },
       body: JSON.stringify({
@@ -110,7 +114,7 @@ bot.on('text', async (ctx) => {
         messages: [
           { 
             role: "system", 
-            content: "Ты вежливый, умный и современный ИИ-помощник DarkAi. Отвечай качественно, с хорошим форматированием и эмодзи." 
+            content: "Ты умный, вежливый и полезный ИИ-помощник DarkAi. Отвечай подробно, грамотно и используй эмодзи." 
           },
           { role: "user", content: userText }
         ]
@@ -118,6 +122,11 @@ bot.on('text', async (ctx) => {
     });
 
     const data = await response.json();
+    
+    if (data.error) {
+      throw new Error(data.error.message || "Ошибка API OpenRouter");
+    }
+
     const replyText = data.choices?.[0]?.message?.content || "❌ Не удалось получить ответ от ИИ.";
 
     await ctx.telegram.editMessageText(
@@ -136,10 +145,10 @@ bot.on('text', async (ctx) => {
       ctx.chat.id, 
       statusMsg.message_id, 
       null, 
-      "❌ Произошла ошибка при связи с ИИ. Попробуйте позже."
+      "❌ Ошибка связи с ИИ. Проверьте правильность OPENROUTER_API_KEY в настройках Render."
     );
   }
 });
 
 bot.launch();
-console.log("Бот и веб-сервер успешно запущены!");
+console.log("Бот DarkAi полностью запущен!");
