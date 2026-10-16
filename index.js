@@ -21,6 +21,19 @@ if (!BOT_TOKEN) {
 const bot = new Telegraf(BOT_TOKEN);
 const AI_MODEL = "openrouter/auto";
 
+// Защита от падения приложения при ошибках сети/API
+process.on('uncaughtException', (err) => {
+  console.error('Перехвачена необработанная ошибка:', err);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Перехвачен отклонённый Промис:', reason);
+});
+
+bot.catch((err, ctx) => {
+  console.error(`Ошибка Telegraf для ${ctx.updateType}:`, err);
+});
+
 const helpMessage = 
   "✨ **Главное меню DarkAi** ✨\n\n" +
   "🤖 **Текст:** Пишите любые вопросы на русском или украинском.\n" +
@@ -48,7 +61,7 @@ bot.hears('ℹ️ О боте', async (ctx) => {
     "🤖 **DarkAi Bot**\n\n" +
     "• **Языки:** Русский, Українська 🇷🇺🇺🇦\n" +
     "• **Текстовый ИИ:** OpenRouter Auto\n" +
-    "• **Генерация фото:** Pollinations AI 🎨",
+    "• **Генерация фото:** Pollinations AI (HD Quality) 🎨",
     { parse_mode: 'Markdown' }
   );
 });
@@ -61,14 +74,14 @@ bot.hears('🎨 Сгенерировать картинку', async (ctx) => {
   await ctx.reply("Чтобы сгенерировать картинку, напишите:\n`/img кабан в лісі`\nИли просто:\n*«Нарисуй кота»* / *«Намалюй вовка»*", { parse_mode: 'Markdown' });
 });
 
-// Умная генерация с точным пониманием русского и украинского языков
+// Умная генерация с улучшением качества и поддержкой RU/UA
 async function generateAndSendImage(ctx, userPrompt) {
-  const statusMsg = await ctx.reply("🎨 **Перевожу запрос и настраиваю генератор...**\n⏳ *Подождите пару секунд...*", { parse_mode: 'Markdown' });
+  const statusMsg = await ctx.reply("🎨 **Улучшаю качество и настраиваю генератор...**\n⏳ *Подождите пару секунд...*", { parse_mode: 'Markdown' });
 
   try {
     const apiKey = OPENROUTER_API_KEY ? OPENROUTER_API_KEY.trim() : '';
     
-    // Промпт-инструкция для точного перевода с русского/украинского
+    // Промпт-инструкция для точного перевода и ДОБАВЛЕНИЯ ТЕГОВ КАЧЕСТВА
     const translationResponse = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -82,7 +95,7 @@ async function generateAndSendImage(ctx, userPrompt) {
         messages: [
           { 
             role: "system", 
-            content: "You are an expert prompt engineer for AI image generators. The user will provide a text description in Russian or Ukrainian. Translate their exact description accurately into a clear, detailed English prompt for an image generator (like Stable Diffusion / Midjourney). Preserve all specific objects, styles, colors, and atmosphere requested by the user. Do not add random characters or change the core subject. Output ONLY the final English prompt, nothing else." 
+            content: "You are an expert prompt engineer for AI image generators. Translate the user description from Russian or Ukrainian into a highly detailed English prompt. Enhance the quality by appending realistic tags such as: '8k resolution, highly detailed, photorealistic, cinematic lighting, masterpiece, sharp focus, 3d render'. Output ONLY the final English prompt, nothing else." 
           },
           { role: "user", content: userPrompt }
         ]
@@ -97,7 +110,7 @@ async function generateAndSendImage(ctx, userPrompt) {
       ctx.chat.id, 
       statusMsg.message_id, 
       null, 
-      "🎨 **Генерирую изображение...**\n⏳ *Почти готово...*", 
+      "🎨 **Генерирую изображение высокое качество...**\n⏳ *Почти готово...*", 
       { parse_mode: 'Markdown' }
     ).catch(() => {});
 
@@ -122,7 +135,6 @@ async function generateAndSendImage(ctx, userPrompt) {
   }
 }
 
-// Команда /img
 bot.command('img', async (ctx) => {
   const text = ctx.message.text;
   const prompt = text.replace('/img', '').trim();
@@ -134,7 +146,6 @@ bot.command('img', async (ctx) => {
   await generateAndSendImage(ctx, prompt);
 });
 
-// Умный текстовый роутер (диалог + поддержка русских и украинских триггеров)
 bot.on('text', async (ctx) => {
   const userText = ctx.message.text;
   
@@ -142,7 +153,6 @@ bot.on('text', async (ctx) => {
 
   const lowerText = userText.toLowerCase();
   
-  // Ключевые слова на русском и украинском языках для авто-генерации
   const drawKeywords = [
     'нарисуй', 'сгенерируй', 'создай фото', 'создай картинку', 'нарисуй картинку', 'сделай картинку',
     'намалюй', 'згенеруй', 'створи фото', 'створи картинку', 'зроби картинку'
@@ -158,13 +168,12 @@ bot.on('text', async (ctx) => {
     });
 
     if (!cleanPrompt) {
-      return ctx.reply("⚠️ Напишите, что именно нарисовать / намалювати! Например:\n*Нарисуй замок в горах* / *Намалюй замок в горах*", { parse_mode: 'Markdown' });
+      return ctx.reply("⚠️ Напишите, что именно нарисовать! Пример:\n*Нарисуй замок в горах*", { parse_mode: 'Markdown' });
     }
 
     return await generateAndSendImage(ctx, cleanPrompt);
   }
 
-  // Обычный текстовый диалог с поддержкой языка пользователя
   await ctx.sendChatAction('typing');
   const statusMsg = await ctx.reply("🧠 *Думаю над ответом...*", { parse_mode: 'Markdown' });
 
@@ -218,10 +227,14 @@ bot.on('text', async (ctx) => {
       ctx.chat.id, 
       statusMsg.message_id, 
       null, 
-      `❌ Помилка зв'язку з ШІ / Ошибка связи с ИИ: ${error.message}`
+      `❌ Ошибка связи с ИИ: ${error.message}`
     );
   }
 });
 
-bot.launch();
-console.log("Бот DarkAi запущен!");
+// Запуск с обработкой ошибок
+bot.launch().then(() => {
+  console.log("Бот DarkAi успешно запущен и защищен от падений!");
+}).catch((err) => {
+  console.error("Ошибка при запуске бота:", err);
+});
