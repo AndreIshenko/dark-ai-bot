@@ -1,7 +1,7 @@
 {
   "name": "dark-ai-bot",
   "version": "1.0.0",
-  "description": "Telegram AI Bot",
+  "description": "Telegram AI Bot DarkAi",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
