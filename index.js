@@ -1,11 +1,20 @@
 const { Telegraf, Markup } = require('telegraf');
+const http = require('http');
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 
-const bot = new Telegraf(BOT_TOKEN);
+// 1. Заглушка для Render, чтобы сервис не выключался по таймауту порта
+const PORT = process.env.PORT || 3000;
+http.createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+  res.end('DarkAi Bot работает!');
+}).listen(PORT, () => {
+  console.log(`Веб-сервер запущен на порту ${PORT}`);
+});
 
-// Выбираем более современную бесплатную модель (Gemini 2.0 Flash Free)
+// 2. Инициализация Telegram-бота
+const bot = new Telegraf(BOT_TOKEN);
 const AI_MODEL = "google/gemini-2.0-flash-exp:free";
 
 const helpMessage = 
@@ -14,7 +23,6 @@ const helpMessage =
   "🎨 **Картинки:** Нажмите кнопку ниже или напишите `/img <описание>`\n" +
   "ℹ️ **Информация:** Узнать возможности бота.";
 
-// Главное меню с интерактивными кнопками
 const mainMenu = Markup.keyboard([
   ['🎨 Сгенерировать картинку', 'ℹ️ О боте'],
   ['📜 Справка']
@@ -35,7 +43,7 @@ bot.hears('ℹ️ О боте', async (ctx) => {
   await ctx.reply(
     "🤖 **DarkAi Bot**\n\n" +
     "• **Текстовый ИИ:** Gemini 2.0 Flash (быстрые и свежие ответы)\n" +
-    "• **Генерация фото:** Pollinations AI (без ограничений)\n" +
+    "• **Генерация фото:** Pollinations AI\n" +
     "• **Скорость:** Высокая ⚡️",
     { parse_mode: 'Markdown' }
   );
@@ -49,7 +57,7 @@ bot.hears('🎨 Сгенерировать картинку', async (ctx) => {
   await ctx.reply("Чтобы сгенерировать картинку, напишите команду в формате:\n\n`/img неоновый город будущего`", { parse_mode: 'Markdown' });
 });
 
-// Генерация изображений с индикатором загрузки
+// Генерация изображений
 bot.command('img', async (ctx) => {
   const text = ctx.message.text;
   const prompt = text.replace('/img', '').trim();
@@ -58,13 +66,11 @@ bot.command('img', async (ctx) => {
     return ctx.reply("⚠️ Пожалуйста, укажите описание! Пример:\n`/img киберпанк кот в очках`", { parse_mode: 'Markdown' });
   }
 
-  // Красивый статус ожидания
   const statusMsg = await ctx.reply("🎨 **Генерирую изображение...**\n⏳ *Подождите несколько секунд...*", { parse_mode: 'Markdown' });
 
   try {
     const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=1024&height=1024&nologo=true&seed=${Math.floor(Math.random() * 1000000)}`;
     
-    // Удаляем статусный текст и отправляем готовое фото
     await ctx.deleteMessage(statusMsg.message_id).catch(() => {});
     await ctx.replyWithPhoto(imageUrl, { 
       caption: `✨ **Результат по запросу:**\n_"${prompt}"_`,
@@ -81,16 +87,13 @@ bot.command('img', async (ctx) => {
   }
 });
 
-// Текстовый диалог с ИИ
+// Текстовый диалог с ИИ (Gemini 2.0 Flash)
 bot.on('text', async (ctx) => {
   const userText = ctx.message.text;
   
-  // Игнорируем нажатия на встроенные кнопки
   if (['🎨 Сгенерировать картинку', 'ℹ️ О боте', '📜 Справка'].includes(userText)) return;
 
-  // Имитация набора текста в Telegram ("typing...")
   await ctx.sendChatAction('typing');
-  
   const statusMsg = await ctx.reply("🧠 *Думаю над ответом...*", { parse_mode: 'Markdown' });
 
   try {
@@ -117,7 +120,6 @@ bot.on('text', async (ctx) => {
     const data = await response.json();
     const replyText = data.choices?.[0]?.message?.content || "❌ Не удалось получить ответ от ИИ.";
 
-    // Заменяем сообщение с ожиданием на готовый ответ
     await ctx.telegram.editMessageText(
       ctx.chat.id,
       statusMsg.message_id,
@@ -125,7 +127,6 @@ bot.on('text', async (ctx) => {
       replyText,
       { parse_mode: 'Markdown' }
     ).catch(async () => {
-      // Если форматирование Markdown вызвало ошибку, отправляем чистый текст
       await ctx.telegram.editMessageText(ctx.chat.id, statusMsg.message_id, null, replyText);
     });
 
@@ -141,4 +142,4 @@ bot.on('text', async (ctx) => {
 });
 
 bot.launch();
-console.log("Бот запущен!");
+console.log("Бот и веб-сервер успешно запущены!");
