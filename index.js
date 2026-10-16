@@ -20,9 +20,8 @@ if (!BOT_TOKEN) {
 
 const bot = new Telegraf(BOT_TOKEN);
 
-// Бесплатные модели на выбор (с фоллбэком)
-const PRIMARY_MODEL = "google/gemini-2.0-flash-exp:free";
-const FALLBACK_MODEL = "meta-llama/llama-3.3-70b-instruct:free";
+// Использование автоматического бесплатного роутера OpenRouter
+const AI_MODEL = "openrouter/auto";
 
 const helpMessage = 
   "✨ **Главное меню DarkAi** ✨\n\n" +
@@ -49,7 +48,7 @@ bot.help(async (ctx) => {
 bot.hears('ℹ️ О боте', async (ctx) => {
   await ctx.reply(
     "🤖 **DarkAi Bot**\n\n" +
-    "• **Текстовый ИИ:** Gemini 2.0 Flash / Llama 3.3 70B\n" +
+    "• **Текстовый ИИ:** Автоматический выбор бесплатной модели (OpenRouter Auto)\n" +
     "• **Генерация фото:** Pollinations AI\n" +
     "• **Скорость:** Высокая ⚡️",
     { parse_mode: 'Markdown' }
@@ -64,7 +63,7 @@ bot.hears('🎨 Сгенерировать картинку', async (ctx) => {
   await ctx.reply("Чтобы сгенерировать картинку, напишите команду в формате:\n\n`/img неоновый город будущего`", { parse_mode: 'Markdown' });
 });
 
-// 2. Исправленная генерация изображений
+// 2. Генерация изображений через Pollinations AI
 bot.command('img', async (ctx) => {
   const text = ctx.message.text;
   const prompt = text.replace('/img', '').trim();
@@ -77,7 +76,7 @@ bot.command('img', async (ctx) => {
 
   try {
     const encodedPrompt = encodeURIComponent(prompt);
-    const randomSeed = Math.floor(Math.random() * 1000000);
+    const randomSeed = Math.floor(Math.random() * 10000000);
     const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=1024&nologo=true&seed=${randomSeed}`;
     
     await ctx.deleteMessage(statusMsg.message_id).catch(() => {});
@@ -96,37 +95,7 @@ bot.command('img', async (ctx) => {
   }
 });
 
-// Функция запроса к OpenRouter
-async function fetchOpenRouter(model, prompt) {
-  const apiKey = OPENROUTER_API_KEY ? OPENROUTER_API_KEY.trim() : '';
-  const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-      "HTTP-Referer": "https://t.me/DarkAiBot",
-      "X-Title": "DarkAi Bot"
-    },
-    body: JSON.stringify({
-      model: model,
-      messages: [
-        { 
-          role: "system", 
-          content: "Ты умный, вежливый и современный ИИ-помощник DarkAi. Отвечай подробно, красиво и с эмодзи." 
-        },
-        { role: "user", content: prompt }
-      ]
-    })
-  });
-
-  const data = await response.json();
-  if (data.error) {
-    throw new Error(data.error.message || "Ошибка API");
-  }
-  return data.choices?.[0]?.message?.content;
-}
-
-// 3. Обработчик диалога с резервной моделью
+// 3. Обработчик текстового диалога
 bot.on('text', async (ctx) => {
   const userText = ctx.message.text;
   
@@ -136,19 +105,35 @@ bot.on('text', async (ctx) => {
   const statusMsg = await ctx.reply("🧠 *Думаю над ответом...*", { parse_mode: 'Markdown' });
 
   try {
-    let replyText;
-    try {
-      // Попытка 1: Запрос к Gemini 2.0 Flash
-      replyText = await fetchOpenRouter(PRIMARY_MODEL, userText);
-    } catch (err) {
-      console.warn("Основная модель недоступна, переключаемся на резервную...", err.message);
-      // Попытка 2: Запрос к Llama 3.3 70B
-      replyText = await fetchOpenRouter(FALLBACK_MODEL, userText);
+    const apiKey = OPENROUTER_API_KEY ? OPENROUTER_API_KEY.trim() : '';
+    
+    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://t.me/DarkAiBot",
+        "X-Title": "DarkAi Bot"
+      },
+      body: JSON.stringify({
+        model: AI_MODEL,
+        messages: [
+          { 
+            role: "system", 
+            content: "Ты умный, вежливый и современный ИИ-помощник DarkAi. Отвечай подробно, красиво и с эмодзи." 
+          },
+          { role: "user", content: userText }
+        ]
+      })
+    });
+
+    const data = await response.json();
+
+    if (data.error) {
+      throw new Error(data.error.message || "Ошибка API");
     }
 
-    if (!replyText) {
-      replyText = "❌ Не удалось получить ответ от ИИ.";
-    }
+    const replyText = data.choices?.[0]?.message?.content || "❌ Не удалось получить ответ от ИИ.";
 
     await ctx.telegram.editMessageText(
       ctx.chat.id,
