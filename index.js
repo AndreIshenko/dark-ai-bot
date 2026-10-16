@@ -4,7 +4,7 @@ const http = require('http');
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 
-// 1. Веб-сервер заглушка, чтобы Render не закрывал порт
+// 1. Веб-сервер заглушка для Render
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
@@ -14,19 +14,17 @@ http.createServer((req, res) => {
 });
 
 if (!BOT_TOKEN) {
-  console.error("ОШИБКА: BOT_TOKEN не найден в переменных окружения!");
+  console.error("ОШИБКА: BOT_TOKEN не найден!");
   process.exit(1);
 }
 
 const bot = new Telegraf(BOT_TOKEN);
-
-// Использование автоматического бесплатного роутера OpenRouter
 const AI_MODEL = "openrouter/auto";
 
 const helpMessage = 
   "✨ **Главное меню DarkAi** ✨\n\n" +
-  "🤖 **Текст:** Просто отправьте мне любой вопрос или задачу.\n" +
-  "🎨 **Картинки:** Нажмите кнопку ниже или напишите `/img <описание>`\n" +
+  "🤖 **Текст:** Просто пишите мне любые вопросы.\n" +
+  "🎨 **Картинки:** Можно использовать команду `/img <описание>` ИЛИ просто написать: *«нарисуй кота в очках»*.\n" +
   "ℹ️ **Информация:** Узнать возможности бота.";
 
 const mainMenu = Markup.keyboard([
@@ -49,7 +47,7 @@ bot.hears('ℹ️ О боте', async (ctx) => {
   await ctx.reply(
     "🤖 **DarkAi Bot**\n\n" +
     "• **Текстовый ИИ:** Автоматический выбор бесплатной модели (OpenRouter Auto)\n" +
-    "• **Генерация фото:** Pollinations AI\n" +
+    "• **Генерация фото:** Pollinations AI (по команде `/img` или словам *нарисуй / сгенерируй*)\n" +
     "• **Скорость:** Высокая ⚡️",
     { parse_mode: 'Markdown' }
   );
@@ -60,18 +58,11 @@ bot.hears('📜 Справка', async (ctx) => {
 });
 
 bot.hears('🎨 Сгенерировать картинку', async (ctx) => {
-  await ctx.reply("Чтобы сгенерировать картинку, напишите команду в формате:\n\n`/img неоновый город будущего`", { parse_mode: 'Markdown' });
+  await ctx.reply("Чтобы сгенерировать картинку, напишите команду в формате:\n\n`/img неоновый город будущего`\nИли просто: *«нарисуй неоновый город»*", { parse_mode: 'Markdown' });
 });
 
-// 2. Генерация изображений через Pollinations AI
-bot.command('img', async (ctx) => {
-  const text = ctx.message.text;
-  const prompt = text.replace('/img', '').trim();
-  
-  if (!prompt) {
-    return ctx.reply("⚠️ Пожалуйста, укажите описание! Пример:\n`/img киберпанк кот в очках`", { parse_mode: 'Markdown' });
-  }
-
+// Вспомогательная функция для генерации картинки
+async function generateAndSendImage(ctx, prompt) {
   const statusMsg = await ctx.reply("🎨 **Генерирую изображение...**\n⏳ *Подождите пару секунд...*", { parse_mode: 'Markdown' });
 
   try {
@@ -90,17 +81,51 @@ bot.command('img', async (ctx) => {
       ctx.chat.id, 
       statusMsg.message_id, 
       null, 
-      "❌ Не удалось сгенерировать картинку. Попробуйте другой запрос."
+      "❌ Не удалось сгенерировать картинку. Попробуйте изменить запрос."
     );
   }
+}
+
+// 2. Генерация по прямой команде /img
+bot.command('img', async (ctx) => {
+  const text = ctx.message.text;
+  const prompt = text.replace('/img', '').trim();
+  
+  if (!prompt) {
+    return ctx.reply("⚠️ Укажите описание! Пример:\n`/img киберпанк кот в очках`", { parse_mode: 'Markdown' });
+  }
+
+  await generateAndSendImage(ctx, prompt);
 });
 
-// 3. Обработчик текстового диалога
+// 3. Умный текстовый обработчик (расспознает и обычный диалог, и просьбы нарисовать)
 bot.on('text', async (ctx) => {
   const userText = ctx.message.text;
   
   if (['🎨 Сгенерировать картинку', 'ℹ️ О боте', '📜 Справка'].includes(userText)) return;
 
+  const lowerText = userText.toLowerCase();
+  
+  // Проверяем, просит ли пользователь нарисовать картинку простым текстом
+  const drawKeywords = ['нарисуй', 'сгенерируй', 'создай фото', 'создай картинку', 'нарисуй картинку', 'сделай картинку'];
+  const isDrawRequest = drawKeywords.some(keyword => lowerText.startsWith(keyword));
+
+  if (isDrawRequest) {
+    // Очищаем промпт от триггерных слов
+    let cleanPrompt = userText;
+    drawKeywords.forEach(keyword => {
+      const reg = new RegExp(`^${keyword}`, 'i');
+      cleanPrompt = cleanPrompt.replace(reg, '').trim();
+    });
+
+    if (!cleanPrompt) {
+      return ctx.reply("⚠️ Напишите, что именно нарисовать! Например:\n*Нарисуй замок в горах*", { parse_mode: 'Markdown' });
+    }
+
+    return await generateAndSendImage(ctx, cleanPrompt);
+  }
+
+  // Обычный текстовый диалог с ИИ
   await ctx.sendChatAction('typing');
   const statusMsg = await ctx.reply("🧠 *Думаю над ответом...*", { parse_mode: 'Markdown' });
 
