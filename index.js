@@ -21,7 +21,7 @@ if (!BOT_TOKEN) {
 const bot = new Telegraf(BOT_TOKEN);
 const AI_MODEL = "openrouter/auto";
 
-// Защита от падения приложения при ошибках сети/API
+// Защита от падения приложения
 process.on('uncaughtException', (err) => {
   console.error('Перехвачена необработанная ошибка:', err);
 });
@@ -37,7 +37,7 @@ bot.catch((err, ctx) => {
 const helpMessage = 
   "✨ **Главное меню DarkAi** ✨\n\n" +
   "🤖 **Текст:** Пишите любые вопросы на русском или украинском.\n" +
-  "🎨 **Картинки:** Команда `/img <описание>` ИЛИ просто *«нарисуй...»* / *«намалюй...»*.\n" +
+  "🎨 **Картинки (Flux HD):** Команда `/img <описание>` ИЛИ *«нарисуй...»* / *«намалюй...»*.\n" +
   "ℹ️ **Информация:** Узнать возможности бота.";
 
 const mainMenu = Markup.keyboard([
@@ -61,7 +61,7 @@ bot.hears('ℹ️ О боте', async (ctx) => {
     "🤖 **DarkAi Bot**\n\n" +
     "• **Языки:** Русский, Українська 🇷🇺🇺🇦\n" +
     "• **Текстовый ИИ:** OpenRouter Auto\n" +
-    "• **Генерация фото:** Pollinations AI (HD Quality) 🎨",
+    "• **Генерация фото:** Pollinations (Модель: Flux, без водяных знаков) 🎨",
     { parse_mode: 'Markdown' }
   );
 });
@@ -74,14 +74,14 @@ bot.hears('🎨 Сгенерировать картинку', async (ctx) => {
   await ctx.reply("Чтобы сгенерировать картинку, напишите:\n`/img кабан в лісі`\nИли просто:\n*«Нарисуй кота»* / *«Намалюй вовка»*", { parse_mode: 'Markdown' });
 });
 
-// Умная генерация с улучшением качества и поддержкой RU/UA
+// Генерация через модель FLUX без водяных знаков
 async function generateAndSendImage(ctx, userPrompt) {
-  const statusMsg = await ctx.reply("🎨 **Улучшаю качество и настраиваю генератор...**\n⏳ *Подождите пару секунд...*", { parse_mode: 'Markdown' });
+  const statusMsg = await ctx.reply("🎨 **Создаю промпт и запускаю Flux...**\n⏳ *Подождите пару секунд...*", { parse_mode: 'Markdown' });
 
   try {
     const apiKey = OPENROUTER_API_KEY ? OPENROUTER_API_KEY.trim() : '';
     
-    // Промпт-инструкция для точного перевода и ДОБАВЛЕНИЯ ТЕГОВ КАЧЕСТВА
+    // Перевод и оптимизация под Flux
     const translationResponse = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -95,7 +95,7 @@ async function generateAndSendImage(ctx, userPrompt) {
         messages: [
           { 
             role: "system", 
-            content: "You are an expert prompt engineer for AI image generators. Translate the user description from Russian or Ukrainian into a highly detailed English prompt. Enhance the quality by appending realistic tags such as: '8k resolution, highly detailed, photorealistic, cinematic lighting, masterpiece, sharp focus, 3d render'. Output ONLY the final English prompt, nothing else." 
+            content: "You are an expert prompt engineer for the FLUX image generator. Translate the user description from Russian or Ukrainian into a detailed, high-quality English prompt. Make it descriptive, beautiful, and cinematic. Output ONLY the final English prompt, nothing else." 
           },
           { role: "user", content: userPrompt }
         ]
@@ -110,17 +110,19 @@ async function generateAndSendImage(ctx, userPrompt) {
       ctx.chat.id, 
       statusMsg.message_id, 
       null, 
-      "🎨 **Генерирую изображение высокое качество...**\n⏳ *Почти готово...*", 
+      "🎨 **Генерирую в высоком качестве (Flux)...**\n⏳ *Еще секундочку...*", 
       { parse_mode: 'Markdown' }
     ).catch(() => {});
 
     const encodedPrompt = encodeURIComponent(finalPrompt);
     const randomSeed = Math.floor(Math.random() * 10000000);
-    const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=1024&nologo=true&seed=${randomSeed}`;
+    
+    // ДОБАВЛЕНО: model=flux и nologo=true (убирает водяной знак)
+    const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=1024&model=flux&nologo=true&seed=${randomSeed}`;
     
     await ctx.deleteMessage(statusMsg.message_id).catch(() => {});
     await ctx.replyWithPhoto(imageUrl, { 
-      caption: `✨ **Запрос:** _"${userPrompt}"_\n\n⚙️ **Промпт:** \`${finalPrompt}\``,
+      caption: `✨ **Запрос:** _"${userPrompt}"_\n\n⚙️ **Flux Промпт:** \`${finalPrompt}\``,
       parse_mode: 'Markdown'
     });
 
@@ -168,7 +170,7 @@ bot.on('text', async (ctx) => {
     });
 
     if (!cleanPrompt) {
-      return ctx.reply("⚠️ Напишите, что именно нарисовать! Пример:\n*Нарисуй замок в горах*", { parse_mode: 'Markdown' });
+      return ctx.reply("⚠️ Напишите, что именно нарисовать! Например:\n*Нарисуй замок в горах*", { parse_mode: 'Markdown' });
     }
 
     return await generateAndSendImage(ctx, cleanPrompt);
@@ -232,9 +234,8 @@ bot.on('text', async (ctx) => {
   }
 });
 
-// Запуск с обработкой ошибок
 bot.launch().then(() => {
-  console.log("Бот DarkAi успешно запущен и защищен от падений!");
+  console.log("Бот DarkAi запущен на модели Flux без водяных знаков!");
 }).catch((err) => {
   console.error("Ошибка при запуске бота:", err);
 });
